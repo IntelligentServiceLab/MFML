@@ -1,118 +1,75 @@
-## Predictive Business Process Monitoring Based on Multi-Semantic Fusion and Multi-Task Learning
+# MFML
 
-### Introduction
-> In this paper, we propose a predictive business process monitoring framework based on multi-semantic fusion and multi-task learning. First, large language models generate semantic representations of event sequences by converting event log trajectories into semantic narratives. Subsequently, a Transformer encoder captures global contextual information, while an LSTM decoder models fine-grained temporal dynamics within events. Finally, residual convolutional networks extract semantic features reflecting implicit attribute correlations among events. These diverse representations are fused and fed into a multi-task learning framework for the simultaneous prediction of the next activity and remaining time.
+Model implementation for **Predictive Business Process Monitoring Based on Multi-View Fusion and Multi-Task Learning**.
 
-### Environment Requirment
-> This code has been tested running undeer Python 3.9.23
-> The Required packages are as follows:
-> - torch == 2.1.1+cu129
-> - numpy == 1.26.4
-> - transformers == 4.38.2
-> - pandas == 2.0.3
-> - tqdm == 4.66.2
-> - scipy == 1.12.0
-> - jinjia2 == 3.1.3
-> - scikit-learn == 1.1.3
-> - imbalanced-learn == 0.12.3
+MFML combines a Medium-BERT semantic view, a Transformer–LSTM order view, and a residual CNN attribute view through gated fusion. Two prediction heads jointly predict the next activity and remaining time. `MFML.py` combines the three views and provides the prediction heads.
 
-##### NOTE: The medium-BERT model you can download from`https://huggingface.co/prajjwal1/bert-medium`
+## Files
 
-### Project Layout & Artifacts
-```
-.
-├─ MFML.py # main training / evaluation script
-├─ data/
-│ └─ {csv_log}.csv # your source event log (CSV)
-├─ utility/
-│ ├─ log_config.py # dataset templates & field config (required)
-│ └─ Bert-medium/ # tokenizer + weights (or use a HF model name)
-├─ log_history/{csv_log}/ # semantic story caches & labels
-│ ├─ {csv_log}_train_all.pkl
-│ ├─ {csv_log}_test_all.pkl
-│ ├─ {csv_log}_label_train_all.pkl
-│ ├─ {csv_log}_label_test_all.pkl
-│ ├─ {csv_log}_label_rt_train_all.pkl
-│ ├─ {csv_log}_label_rt_test_all.pkl
-│ ├─ {csv_log}_id2label_all.pkl
-│ └─ {csv_log}_label2id_all.pkl
-├─ pro_data/ # attribute tensors & dataframes
-│ ├─ {csv_log}_train_df.pkl
-│ ├─ {csv_log}_test_df.pkl
-│ ├─ {csv_log}_train_data_x.npy # [N, T, M, D]
-│ ├─ {csv_log}_train_data_y.npy
-│ ├─ {csv_log}_test_data_x.npy
-│ └─ {csv_log}_test_data_y.npy
-├─ w2v_model/ # per‑attribute Word2Vec models
-│ └─ {csv_log}_{attribute}_w2v_model.h5
-└─ models/
-└─ {csv_log}_all.pth # best checkpoint (by validation)
+- `MFML.py`: main model, gated fusion, and prediction heads.
+- `semantic.py`: Medium-BERT semantic view.
+- `order.py`: Transformer-LSTM order view.
+- `attribute.py`: residual CNN attribute view.
+
+Keep these four Python files in the same directory.
+
+## Requirements
+
+Tested with Python 3.11, PyTorch 2.5.1, and Transformers 4.46.3.
+
+```bash
+pip install torch==2.5.1 transformers==4.46.3
 ```
 
-###### The _all suffix comes from TYPE='all'. If you change TYPE, corresponding filenames change accordingly.
+Use [Medium-BERT](https://huggingface.co/prajjwal1/bert-medium) or an existing local copy through `bert_model_name_or_path`.
 
-### Your Data (CSV) & Mandatory Columns
-Place the source log at data/{csv_log}.csv. The CSV must contain at least:
+## Usage
 
-- case — case identifier
+```python
+import torch
+from MFML import MFML
 
-- activity — event name (classification target)
+model = MFML(
+    categorical_cardinalities={"activity": 12, "resource": 20},
+    num_activities=10,
+    bert_model_name_or_path="prajjwal1/bert-medium",  # or a local directory
+)
 
-- timestamp — parsable by pandas.to_datetime
-
-- Additional attribute columns matching ATTRIBUTES used by the script 
-
-- remaining_time — remaining time to case end in days (target for RTP)
-
-### How to Run (Quickstart)
-
-- Prepare CSV in data/ with columns above, including remaining_time (days)
-
-- Configure templates in utility/log_config.py (key must equal csv_log)
-
-- Point BERT to a valid local folder or HF model name
-
-- Install deps (Section 3)
-
-- Tune hyperparams if needed (Section 6)
-
-
-Launch:
-
-```
-python MFML.py
+# Shape example; replace these tensors with your preprocessed event prefixes.
+model.eval()
+with torch.no_grad():
+    output = model(
+        input_ids=torch.tensor([[101, 2054, 102]]),
+        attention_mask=torch.ones(1, 3, dtype=torch.long),
+        categorical_ids=torch.tensor([[[2, 2], [3, 4]]]),
+        numeric_features=torch.zeros(1, 2, 2),
+        event_mask=torch.ones(1, 2, dtype=torch.bool),
+    )
+print(output["activity_logits"].shape)  # [1, 10]
+print(output["remaining_time_z"].shape)  # [1]
 ```
 
-First run will:
+## Inputs and outputs
 
-1. Split cases chronologically into train/test (e.g., 70/30)
+- Text tensors have shape `[batch, tokens]` and describe only observed prefix events. Categorical IDs have shape `[batch, events, attributes]`, following the attribute order passed to the constructor; reserve `0` for padding and `1` for unknown values. Events are right-padded.
+- Numeric inputs are `[seconds_since_last, seconds_since_start]`, each transformed with `log1p` and standardized using training-set statistics. For the paper setting, pass training-set CBOW matrices of shape `[vocab_size, embedding_dim]` (including PAD/UNK rows) through `embedding_initial_weights`; otherwise embeddings initialize randomly.
+- Outputs are next-activity logits, `remaining_time_z`, and three view weights (`semantic`, `order`, `attribute`). Time is predicted in standardized `log1p(days)` space: `days = torch.expm1(z * train_std + train_mean).clamp_min(0)`.
 
-2. Build semantic story caches under log_history/
+Architecture parameters are defined directly in the Python files. Prepare your own inputs and training loop; no dataset or configuration files are required by this model-only release.
 
-3. Train per‑attribute Word2Vec encoders & export attribute tensors into pro_data/
+## Datasets
 
-4. Train with early stopping; save best checkpoint to models/
+Download the original event logs from the sources below and preprocess them separately. Datasets are not bundled with this repository.
 
-5. Evaluate on test set and print metrics
+| Dataset | Download page |
+| --- | --- |
+| BPIC_2013_C | [BPI Challenge 2013 — closed problems](https://doi.org/10.4121/uuid:c2c3b154-ab26-4b31-a0e8-8f2350ddac11) |
+| Receipt | [CoSeLoG receipt phase](https://doi.org/10.4121/uuid:a07386a5-7be3-4367-9535-70bc9e77dbe6) |
+| Helpdesk | [Help desk log of an Italian company](https://doi.org/10.4121/uuid:0c60edf1-6f83-4e75-9367-4c63b3e9d5bb) |
+| BPIC_2017_O | [BPI Challenge 2017 — Offer log](https://doi.org/10.4121/12705737) |
+| BPIC_2020_Re | [BPI Challenge 2020 — Request For Payment](https://doi.org/10.4121/uuid:895b26fb-6f25-46eb-9e48-0dca26fcd030) |
+| BPIC_2020_Pr | [BPI Challenge 2020 — Prepaid Travel Costs](https://doi.org/10.4121/uuid:5d2fe5e1-f91f-4a3b-ad9b-9e4126870165) |
+| Production | [Production Analysis with Process Mining Technology](https://doi.org/10.4121/uuid:68726926-5ac5-4fab-b873-ee76ea412399) |
+| MIP | [Author repository — mip.csv](https://github.com/Sergey-Zeltyn/MIP-dataset) |
 
-
-### Tips & Troubleshooting
-
-- FileNotFoundError: utility/Bert-medium/
-  Use a valid HF model name or provide a local folder; update both tokenizer and model paths.
-- KeyError: 'remaining_time' or unusually large MAE
-  Add/verify remaining_time in days. See Section 4.1.
-- OOM / out of GPU memory
-  Reduce BATCH_SIZE, MAX_LEN, Windows_size, or ENCODING_LENGTH (e.g., 32 → 16).
-
-- Attribute names don’t match
-  Ensure ATTRIBUTES exactly matches CSV column names.
-
-- Caches inconsistent after changing settings
-  Remove log_history/ & pro_data/ and re‑run to rebuild caches.
-
-### License
-
--This project is released under the [**MIT License**](https://opensource.org/license/MIT%7D%7B%5Ctextbf%7BMIT).
--The complete text of the license can be found in the [LICENSE](LICENSE) file in the root directory of this repository.
-
+For Production, use `Complete Timestamp` as the event time.
