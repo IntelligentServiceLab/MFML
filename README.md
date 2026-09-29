@@ -23,32 +23,6 @@ pip install torch==2.5.1 transformers==4.46.3
 
 Use [Medium-BERT](https://huggingface.co/prajjwal1/bert-medium) or an existing local copy through `bert_model_name_or_path`.
 
-## Usage
-
-```python
-import torch
-from MFML import MFML
-
-model = MFML(
-    categorical_cardinalities={"activity": 12, "resource": 20},
-    num_activities=10,
-    bert_model_name_or_path="prajjwal1/bert-medium",  # or a local directory
-)
-
-# Shape example; replace these tensors with your preprocessed event prefixes.
-model.eval()
-with torch.no_grad():
-    output = model(
-        input_ids=torch.tensor([[101, 2054, 102]]),
-        attention_mask=torch.ones(1, 3, dtype=torch.long),
-        categorical_ids=torch.tensor([[[2, 2], [3, 4]]]),
-        numeric_features=torch.zeros(1, 2, 2),
-        event_mask=torch.ones(1, 2, dtype=torch.bool),
-    )
-print(output["activity_logits"].shape)  # [1, 10]
-print(output["remaining_time_z"].shape)  # [1]
-```
-
 ## Inputs and outputs
 
 - Text tensors have shape `[batch, tokens]` and describe only observed prefix events. Categorical IDs have shape `[batch, events, attributes]`, following the attribute order passed to the constructor; reserve `0` for padding and `1` for unknown values. Events are right-padded.
