@@ -1,0 +1,11 @@
+# Runtime dependencies; Python 3.11 validation baseline.
+torch==2.5.1
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.13.1
+gensim==4.3.3
+transformers==4.46.3
+tokenizers==0.20.3
+safetensors==0.4.5
+huggingface-hub==0.26.5
+tqdm==4.67.1
