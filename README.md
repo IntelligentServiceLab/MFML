@@ -55,14 +55,6 @@ The prepared file stores split data and fitted preprocessing. Training writes `b
 
 Each evaluation writes an independent `reevaluation-<timestamp>` directory without overwriting training results. Keep the prepared file and complete run directory together when transferring an experiment. Reevaluation needs these saved artifacts, but does not require the original source log or original BERT folder. Load only trusted prepared files and checkpoints.
 
-## Data protocol
-
-- Cases are ordered by start time: the last 30% form the test split; the first 70% are divided 80%/20% into training/validation, approximately 56%/14%/30% overall.
-- Every eligible prefix satisfies `2 <= k < n`. All prefixes of a case remain in one split. Inputs contain observed events only; remaining time is computed from the observed prefix end to the case end.
-- Vocabularies, CBOW embeddings, numeric statistics, and target scaling are fitted on training data only. CBOW is required: dimension 32, window 5, 20 epochs; initialized embeddings remain trainable. Inputs are capped at 256 events and 512 text tokens.
-- Numeric event features are seconds since the preceding event and since case start, transformed with `log1p` and standardized. Remaining-time predictions are inverted to days for reporting.
-- All valid prefixes are scored. Unseen true activity names are retained, so predicting an unknown token does not count as a correct prediction of an unseen activity.
-
 ## Datasets
 
 | Dataset | Download page |
